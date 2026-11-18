@@ -101,3 +101,5 @@ MLP도 그 법칙의 내부 이력을 입력으로 받지 않으므로 정확한
 
 `overall.csv`, `by_scenario.csv`, `by_condition.csv`, `by_joint.csv`,
 `history.csv`, `summary.json`, 체크포인트와 그래프가 결과 폴더에 저장된다.
+Train 표본·속도 구간·KAN 함수·LuGre 이력 입력·KAN 설정에 대한 후속
+분해는 [FRICTION_DIAGNOSTICS.md](FRICTION_DIAGNOSTICS.md)에 있다.

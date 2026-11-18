@@ -157,7 +157,8 @@ def _predict_closed(kind: str, fit: dict, x: np.ndarray) -> np.ndarray:
 
 class SharedResidual(nn.Module):
     def __init__(self, kind: str, x_mean: np.ndarray, x_scale: np.ndarray,
-                 y_mean: np.ndarray, y_scale: np.ndarray, intervals: int):
+                 y_mean: np.ndarray, y_scale: np.ndarray, intervals: int,
+                 kan_width: int = 8):
         super().__init__()
         self.kind = kind
         self.register_buffer("x_mean", torch.tensor(x_mean, dtype=torch.float32))
@@ -167,7 +168,8 @@ class SharedResidual(nn.Module):
         if kind == "MLP":
             self.network = ResidualMLP(28, width=32)
         elif kind == "KAN":
-            self.network = nn.Sequential(KANLayer(28, 8, intervals), KANLayer(8, 6, intervals))
+            self.network = nn.Sequential(KANLayer(28, kan_width, intervals),
+                                         KANLayer(kan_width, 6, intervals))
         else:
             raise ValueError(kind)
 
@@ -203,7 +205,8 @@ def _fit_neural(kind: str, seed: int, train: dict, validation: dict,
                 scenario_features: np.ndarray, config: dict) -> tuple[SharedResidual, list[dict], int, float]:
     torch.manual_seed(seed)
     np_rng = np.random.default_rng(seed)
-    model = SharedResidual(kind, *_model_stats(train, scenario_features), config["spline_intervals"])
+    model = SharedResidual(kind, *_model_stats(train, scenario_features),
+                           config["spline_intervals"], config.get("kan_width", 8))
     optimizer = torch.optim.Adam(model.parameters(), lr=config["learning_rate"])
     states = torch.from_numpy(train["features"])
     targets = torch.from_numpy(train["delta"])
