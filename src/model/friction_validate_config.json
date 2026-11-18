@@ -1,0 +1,15 @@
+{
+  "experiment": "friction_model_validation_full_v1",
+  "seeds": [11, 29, 47],
+  "train_rows_per_chunk": 3921,
+  "validation_rows_per_chunk": 128,
+  "epochs": 25,
+  "patience": 6,
+  "batch_size": 2048,
+  "inference_batch_size": 8192,
+  "learning_rate": 0.001,
+  "ridge_lambda": 0.0001,
+  "spline_intervals": 5,
+  "torch_threads": 4,
+  "selection_seed": 2026
+}
