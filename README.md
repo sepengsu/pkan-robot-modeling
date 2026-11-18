@@ -29,6 +29,12 @@ Doosan 로봇 모델링 작업 공간입니다. 현재 A0509 학습은 기존 �
 
 `data/residual_data/`의 원본은 기존 프로젝트의 `model/residual_data/`입니다. ROS bag(`*.db3`), 반복 trial의 원시 기록, 그림, 영상, 체크포인트는 복사하지 않았습니다. 토크 라벨은 MuJoCo 역동역학 값이며 실측 모터 토크가 아닙니다. 현재 `src/model` 실험은 원본 D 드라이브를 직접 읽는 설정입니다.
 
+학습 데이터만 다시 복사하고 원본·복사본 해시를 확인하려면 PowerShell에서 실행하세요. 기존 파일의 해시가 같으면 건너뛰며, 다른 파일을 삭제하지 않습니다.
+
+```powershell
+.\scripts\copy_training_data.ps1
+```
+
 Git 저장소는 [sepengsu/pkan-robot-modeling](https://github.com/sepengsu/pkan-robot-modeling)입니다. 대용량 `data/`, 새 실행 결과 `result/`, `.venv/`는 업로드 대상에서 제외하고 폴더 자리표시자만 버전 관리합니다.
 
 ## 학습 환경
