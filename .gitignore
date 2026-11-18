@@ -1,6 +1,7 @@
 .venv/
 data/*
 !data/.gitkeep
+data_unfiltered_to_delete/
 result/*
 !result/.gitkeep
 data-copy.log
