@@ -1,0 +1,8 @@
+.venv/
+data/*
+!data/.gitkeep
+result/*
+!result/.gitkeep
+data-copy.log
+__pycache__/
+*.pyc
