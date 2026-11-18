@@ -48,15 +48,37 @@ def _arrays(data_root: Path):
     return manifest, arrays, x, y, train, val
 
 
+def _campaign_weights(arrays: dict[str, np.ndarray], indices: np.ndarray) -> torch.Tensor:
+    """Use every row while giving each campaign equal total loss weight."""
+    campaign = arrays["campaign"]
+    selected = campaign[indices]
+    codes, counts = np.unique(selected, return_counts=True)
+    if len(codes) != len(np.unique(campaign)) or (counts == 0).any():
+        raise ValueError("each campaign needs rows in every training/validation split")
+    weights = np.zeros(len(campaign), dtype=np.float32)
+    for code, count in zip(codes, counts):
+        weights[indices[selected == code]] = len(indices) / (len(codes) * int(count))
+    return torch.from_numpy(weights)
+
+
 def _new_branch(kind: str, x: torch.Tensor, target: torch.Tensor, train: np.ndarray,
-                intervals: int = 5, use_ddq: bool = False) -> NormalizedBranch:
+                intervals: int = 5, use_ddq: bool = False,
+                sample_weights: torch.Tensor | None = None) -> NormalizedBranch:
     columns = list(range(6, 12)) if kind == "M3" else list(range(18 if use_ddq else 12))
     x_train = x[train][:, columns]
     y_train = target[train]
-    x_mean = x_train.mean(0)
-    x_scale = x_train.std(0, unbiased=False).clamp_min(0.01)
-    y_mean = y_train.mean(0)
-    y_scale = y_train.std(0, unbiased=False).clamp_min(0.02)
+    if sample_weights is None:
+        x_mean = x_train.mean(0)
+        x_scale = x_train.std(0, unbiased=False).clamp_min(0.01)
+        y_mean = y_train.mean(0)
+        y_scale = y_train.std(0, unbiased=False).clamp_min(0.02)
+    else:
+        weight = sample_weights[train, None]
+        denom = weight.sum()
+        x_mean = (x_train * weight).sum(0) / denom
+        x_scale = ((x_train - x_mean).square() * weight).sum(0).div(denom).sqrt().clamp_min(0.01)
+        y_mean = (y_train * weight).sum(0) / denom
+        y_scale = ((y_train - y_mean).square() * weight).sum(0).div(denom).sqrt().clamp_min(0.02)
     if kind == "M2":
         network = ResidualMLP(len(columns))
     elif kind == "M3":
@@ -69,7 +91,9 @@ def _new_branch(kind: str, x: torch.Tensor, target: torch.Tensor, train: np.ndar
 
 
 def _fit(model: NormalizedBranch, x: torch.Tensor, target: torch.Tensor,
-         train: np.ndarray, val: np.ndarray, config: dict, seed: int) -> tuple[list[dict], int, float]:
+         train: np.ndarray, val: np.ndarray, config: dict, seed: int,
+         train_weights: torch.Tensor | None = None,
+         val_weights: torch.Tensor | None = None) -> tuple[list[dict], int, float]:
     torch.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -84,9 +108,11 @@ def _fit(model: NormalizedBranch, x: torch.Tensor, target: torch.Tensor,
         for indices in permutation.split(config["batch_size"]):
             optimizer.zero_grad(set_to_none=True)
             predicted = model(x[indices])
-            torque_loss = ((predicted - target[indices]) / model.y_scale).square().mean()
+            squared = ((predicted - target[indices]) / model.y_scale).square()
+            torque_loss = (squared.mean(1) * train_weights[indices]).mean() if train_weights is not None else squared.mean()
             smooth_loss = model.smoothness()
-            correction_loss = predicted.square().mean()
+            correction_loss = ((predicted.square().mean(1) * train_weights[indices]).mean()
+                               if train_weights is not None else predicted.square().mean())
             loss = (torque_loss + config["lambda_smooth"] * smooth_loss
                     + config["lambda_residual"] * correction_loss)
             loss.backward()
@@ -99,7 +125,9 @@ def _fit(model: NormalizedBranch, x: torch.Tensor, target: torch.Tensor,
             parts = [model(x[idx]) for idx in torch.as_tensor(val).split(config["batch_size"])]
             pred_val = torch.cat(parts)
             error = pred_val - target[val]
-            val_loss = float((error / model.y_scale).square().mean())
+            val_squared = (error / model.y_scale).square()
+            val_loss = float((val_squared.mean(1) * val_weights[val]).mean()
+                             if val_weights is not None else val_squared.mean())
             rmse = torch.sqrt(error.square().mean(0)).tolist()
             total_rmse = float(torch.sqrt(error.square().mean()))
         elapsed = time.perf_counter() - start
@@ -134,6 +162,12 @@ def _checkpoint(kind: str, model: NormalizedBranch, config: dict, seed: int,
 
 def train_all(data_root: Path, output: Path, config: dict) -> dict:
     _, arrays, x, y, train, val = _arrays(data_root)
+    train_weights = val_weights = None
+    if config.get("campaign_balance", False):
+        if "campaign" not in arrays:
+            raise ValueError("campaign_balance requires campaign codes in the prepared dataset")
+        train_weights = _campaign_weights(arrays, train)
+        val_weights = _campaign_weights(arrays, val)
     if output.exists():
         raise FileExistsError(f"choose a new training output: {output}")
     output.mkdir(parents=True)
@@ -146,8 +180,9 @@ def train_all(data_root: Path, output: Path, config: dict) -> dict:
         models = {}
         for kind in ("M2", "M3", "M4"):
             torch.manual_seed(seed)
-            model = _new_branch(kind, x, y, train, config["grid_intervals"])
-            history, best_epoch, duration = _fit(model, x, y, train, val, config, seed)
+            model = _new_branch(kind, x, y, train, config["grid_intervals"], sample_weights=train_weights)
+            history, best_epoch, duration = _fit(model, x, y, train, val, config, seed,
+                                                 train_weights, val_weights)
             checkpoint = _checkpoint(kind, model, config, seed, history, best_epoch, duration)
             torch.save(checkpoint, seed_dir / f"{kind}.pt")
             models[kind] = model
@@ -160,8 +195,9 @@ def train_all(data_root: Path, output: Path, config: dict) -> dict:
             joint_prediction = torch.cat([models["M3"](part) for part in x.split(config["batch_size"])])
         remaining = y - joint_prediction
         torch.manual_seed(seed)
-        coupled = _new_branch("M5", x, remaining, train, config["grid_intervals"])
-        history, best_epoch, duration = _fit(coupled, x, remaining, train, val, config, seed)
+        coupled = _new_branch("M5", x, remaining, train, config["grid_intervals"], sample_weights=train_weights)
+        history, best_epoch, duration = _fit(coupled, x, remaining, train, val, config, seed,
+                                             train_weights, val_weights)
         checkpoint = _checkpoint("M5", coupled, config, seed, history, best_epoch, duration,
                                  {"jointwise_checkpoint": "M3.pt", "stagewise": True,
                                   "total_parameter_count": parameter_count(models["M3"]) + parameter_count(coupled)})

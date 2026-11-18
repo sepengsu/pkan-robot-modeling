@@ -73,7 +73,8 @@ def evaluate(data_root: Path, model_root: Path, output: Path) -> dict:
                 np.savez_compressed(output / "branch_contributions.npz", jointwise_nm=joint,
                                     coupled_nm=coupled, target_residual_nm=target_b - m1,
                                     features=arrays["features"], split=arrays["split"],
-                                    condition=arrays["condition"], trajectory=arrays["trajectory"])
+                                    condition=arrays["condition"], trajectory=arrays["trajectory"],
+                                    **({"campaign": arrays["campaign"]} if "campaign" in arrays else {}))
             if kind == "M3":
                 basis = model.network.basis
                 spline = {"coefficients": model.network.coefficients.detach().numpy().tolist(),
@@ -89,7 +90,8 @@ def evaluate(data_root: Path, model_root: Path, output: Path) -> dict:
     np.savez_compressed(output / "predictions_seed_first.npz", target_A=target_a, target_B=target_b,
                         **{name: value for name, value in predictions.items() if name in ("M0", "M1") or name.endswith(f"seed_{first}")},
                         features=arrays["features"], split=arrays["split"],
-                        condition=arrays["condition"], trajectory=arrays["trajectory"])
+                        condition=arrays["condition"], trajectory=arrays["trajectory"],
+                        **({"campaign": arrays["campaign"]} if "campaign" in arrays else {}))
     records = []
     split_codes = {k: v for k, v in manifest["split_codes"].items() if k != "diagnostic"}
     for scenario, target in (("A", target_a), ("B", target_b)):
@@ -99,6 +101,13 @@ def evaluate(data_root: Path, model_root: Path, output: Path) -> dict:
             scopes = [("all", "all", split_mask)]
             scopes.extend(("condition", name, split_mask & (arrays["condition"] == ci)) for ci, name in enumerate(manifest["conditions"]))
             scopes.extend(("trajectory", f"T{tid}", split_mask & (arrays["trajectory"] == tid)) for tid in sorted(set(arrays["trajectory"][split_mask])))
+            if "campaign" in arrays:
+                scopes.extend(("campaign", name, split_mask & (arrays["campaign"] == ci))
+                              for ci, name in enumerate(manifest["campaigns"]))
+                scopes.extend(("campaign_condition", f"{campaign}/{condition}",
+                               split_mask & (arrays["campaign"] == ci) & (arrays["condition"] == cj))
+                              for ci, campaign in enumerate(manifest["campaigns"])
+                              for cj, condition in enumerate(manifest["conditions"]))
             for scope, group, mask in scopes:
                 if not np.any(mask):
                     continue
@@ -121,7 +130,7 @@ def evaluate(data_root: Path, model_root: Path, output: Path) -> dict:
                           "M3": "M1 + six independent velocity splines",
                           "M4": "M1 + coupled spline KAN [12,8,6]",
                           "M5": "M1 + frozen M3 + coupled KAN trained on remaining residual"},
-               "config": config, "records": records}
+               "config": config, "campaigns": manifest.get("campaigns"), "records": records}
     (output / "metrics.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     from .plots import make_figures
     make_figures(output, manifest, records, first)

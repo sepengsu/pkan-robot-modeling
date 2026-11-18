@@ -1,5 +1,7 @@
 # A0509 simulated residual dynamics: structured spline/KAN study
 
+The combined legacy + wide16_v3 M0–M5 retraining and its PowerShell command are documented in [COMBINED.md](COMBINED.md). The results below describe the earlier single-campaign study.
+
 This directory is an **offline** experiment. Labels are MuJoCo `qfrc_inverse`
 generalized forces, not measured A0509 motor torque. No ROS 2 launch file or
 robot-control path is used or modified.

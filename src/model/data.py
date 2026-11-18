@@ -129,6 +129,9 @@ def prepare(archive: Path, legacy_repo: Path, output: Path) -> dict:
 
 def load_prepared(root: Path) -> tuple[dict, dict[str, np.ndarray]]:
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    digest = manifest.get("dataset_sha256")
+    if digest is not None and hashlib.sha256((root / "dataset.npz").read_bytes()).hexdigest() != digest:
+        raise ValueError("prepared dataset SHA-256 mismatch")
     with np.load(root / "dataset.npz", allow_pickle=False) as raw:
         arrays = {k: raw[k] for k in raw.files}
     for name, code in manifest["split_codes"].items():

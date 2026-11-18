@@ -1,5 +1,7 @@
 # Robot Modeling
 
+Legacy와 wide16_v3를 함께 사용한 M0–M5 재학습 방법과 결과는 [공동 모델링 설명](src/model/COMBINED.md)에 있습니다. 실행 명령은 `.\scripts\run_combined_models.ps1 -Stage All`입니다.
+
 새 A0509 오프라인 물리 잔차 실험의 코드, 재현 명령, 실제 결과는
 [src/model/README.md](src/model/README.md)에 정리했습니다.
 
